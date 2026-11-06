@@ -1,0 +1,67 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: hermes-build
+spec:
+  params:
+    - name: release
+    - name: upstream-commit
+    - name: recipe-repository
+    - name: recipe-commit
+    - name: ubi-image
+    - name: image
+  workspaces:
+    - name: source
+    - name: registry-auth
+  tasks:
+    - name: fetch-recipe
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: URL
+          value: $(params.recipe-repository)
+        - name: REVISION
+          value: $(params.recipe-commit)
+        - name: DELETE_EXISTING
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: source
+    - name: build-image
+      runAfter: [fetch-recipe]
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: buildah
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: IMAGE
+          value: $(params.image)
+        - name: TLS_VERIFY
+          value: "true"
+        - name: BUILD_EXTRA_ARGS
+          value: >-
+            --build-arg HERMES_RELEASE=$(params.release)
+            --build-arg HERMES_COMMIT=$(params.upstream-commit)
+            --build-arg UBI_IMAGE=$(params.ubi-image)
+      workspaces:
+        - name: source
+          workspace: source
+        - name: dockerconfig
+          workspace: registry-auth
+  results:
+    - name: IMAGE_URL
+      value: $(tasks.build-image.results.IMAGE_URL)
+    - name: IMAGE_DIGEST
+      value: $(tasks.build-image.results.IMAGE_DIGEST)

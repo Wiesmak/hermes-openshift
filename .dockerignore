@@ -1,0 +1,4 @@
+**
+!Dockerfile
+!openshift-entrypoint.sh
+!build-support.sh

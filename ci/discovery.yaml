@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hermes-release-discovery
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hermes-release-discovery
+rules:
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hermes-release-discovery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: hermes-release-discovery
+subjects:
+  - kind: ServiceAccount
+    name: hermes-release-discovery
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-build-settings
+data:
+  RECIPE_REPOSITORY: ""
+  RECIPE_COMMIT: ""
+  UBI_IMAGE: ""
+  IMAGE_REPOSITORY: ""
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hermes-release-discovery
+spec:
+  schedule: "17 * * * *"
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 300
+      template:
+        spec:
+          serviceAccountName: hermes-release-discovery
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: discover
+              image: docker.io/library/python:3.12-alpine@sha256:213242b537a1c166a0c53e903461fc18d5518e7196c93dbecda452660a848918
+              command: ["python3", "-B", "/opt/ci/discover.py"]
+              envFrom:
+                - configMapRef:
+                    name: hermes-build-settings
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 32Mi
+                limits:
+                  memory: 128Mi
+              volumeMounts:
+                - name: release-discovery
+                  mountPath: /opt/ci
+                  readOnly: true
+          volumes:
+            - name: release-discovery
+              configMap:
+                name: hermes-release-discovery-script
